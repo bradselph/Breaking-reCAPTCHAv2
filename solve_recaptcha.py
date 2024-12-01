@@ -18,6 +18,8 @@ import time
 import csv
 from datetime import datetime
 from IP import vpn
+from IP.ip_rotator import create_ip_rotator
+from IP.ip_config import load_config
 from selenium.webdriver import ActionChains
 from pynput.mouse import Button, Controller
 import random
@@ -40,13 +42,15 @@ TYPE2 = True #segmentation problem
 TYPE3 = True #dynamic captcha
 ENABLE_LOGS = True
 ENABLE_VPN = False
+ENABLE_IP_ROTATION = True
+IP_ROTATION_TYPE = 'proxy'  # or 'vpn'
 ENABLE_MOUSE_MOVEMENT = True
 ENABLE_NATURAL_MOUSE_MOVEMENT = True
 ENABLE_COOKIES = True
 PATH_TO_FIREFOX_PROFILE = '.../Application Support/Firefox/Profiles/wtjovf77.default-release'
 
 def set_variables(variables):
-    global CAPTCHA_URL, THRESHOLD, USE_TOP_N_STRATEGY, N, CLASSES, YOLO_CLASSES, MODEL, TYPE1, TYPE2, TYPE3, ENABLE_LOGS, ENABLE_VPN, ENABLE_MOUSE_MOVEMENT, ENABLE_NATURAL_MOUSE_MOVEMENT, ENABLE_COOKIES
+    global CAPTCHA_URL, THRESHOLD, USE_TOP_N_STRATEGY, N, CLASSES, YOLO_CLASSES, MODEL, TYPE1, TYPE2, TYPE3, ENABLE_LOGS, ENABLE_VPN, ENABLE_MOUSE_MOVEMENT, ENABLE_NATURAL_MOUSE_MOVEMENT, ENABLE_COOKIES, ENABLE_IP_ROTATION, IP_ROTATION_TYPE
     if 'CAPTCHA_URL' in variables:
         CAPTCHA_URL = variables['CAPTCHA_URL']
     if 'THRESHOLD' in variables:
@@ -77,6 +81,10 @@ def set_variables(variables):
         ENABLE_NATURAL_MOUSE_MOVEMENT = variables['ENABLE_NATURAL_MOUSE_MOVEMENT']
     if 'ENABLE_COOKIES' in variables:
         ENABLE_COOKIES = variables['ENABLE_COOKIES']
+    if 'ENABLE_IP_ROTATION' in variables:
+        ENABLE_IP_ROTATION = variables['ENABLE_IP_ROTATION']
+    if 'IP_ROTATION_TYPE' in variables:
+        IP_ROTATION_TYPE = variables['IP_ROTATION_TYPE']
 
 #suppress tensorflow logs
 tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.FATAL)
@@ -462,7 +470,9 @@ def save_global_variables():
         file.write(f'ENABLE_NATURAL_MOUSE_MOVEMENT = {ENABLE_NATURAL_MOUSE_MOVEMENT}\n')
         file.write(f'ENABLE_COOKIES = {ENABLE_COOKIES}\n')
         file.write(f'USE_TOP_N_STRATEGY = {USE_TOP_N_STRATEGY}\n')
-        file.write(f'N = {N}\n')   
+        file.write(f'N = {N}\n')
+        file.write(f'ENABLE_IP_ROTATION = {ENABLE_IP_ROTATION}\n')
+        file.write(f'IP_ROTATION_TYPE = {IP_ROTATION_TYPE}\n')
 
 
 
@@ -474,13 +484,26 @@ def reset_globals():
 
 def run():
     model = getFirstModel()
+
+    if ENABLE_IP_ROTATION:
+        ip_config = load_config()
+        ip_rotator = create_ip_rotator(ip_config)
+        try:
+            if not ip_rotator.connect():
+                print("Failed to connect to IP rotator")
+                return False
+            print(f"Connected with IP: {ip_rotator.get_current_ip()}")
+        except Exception as e:
+            print(f"IP rotation error: {str(e)}")
+            return False
     try:
         driver = open_browser_with_captcha()
-    except:
-        vpn.disconnect()
+    except Exception as e:
+        if ENABLE_IP_ROTATION:
+            ip_rotator.disconnect()
+        print(f"Browser error: {str(e)}")
         return False
     while True:
-        
         try:
             #check type of captcha
             if "squares" in driver.find_element(By.ID, 'rc-imageselect').text and TYPE2:
